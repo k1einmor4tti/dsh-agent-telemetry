@@ -66,4 +66,3 @@
     - *Cat D*: truncation rate `0.95%` (`78 / 8,192`), summary compaction failure rate `0.0%` (`0 / 14`), summary compaction token ratio `0.074`, post-compaction re-read rate `20.0%` (`42 / 210`), LLM retry rate `0.28%` (`20` calls, `120` retries), timeout turn rate `0.54%` (`3`), context-overflow turn rate `0.72%` (`4`), abort rate `6.50%` (`36`).
 
 DONE
-
