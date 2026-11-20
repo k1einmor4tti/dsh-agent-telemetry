@@ -26,3 +26,12 @@
 - **Assumptions / Notes**:
   - Subagent transcripts in nested session subdirectories under `~/.claude/projects/<slug>/<session>/` are out of scope for P0 per `[R10]`; inline `isSidechain: true` entries within top-level `.jsonl` files are emitted as separate sidechain trajectories.
   - `[R7]` (M5 compaction metrics excluding `reason == "prune"`) and Part 2 of `[R11]` (M6 SQLite store `UNIQUE(source, response_id)` and `UNIQUE(source, call_id)`) remain under `Open` until M5 and M6 are implemented.
+
+## M4 — Shared Classifiers
+
+- **Done**: Implemented `src/dsh_metrics/classifiers.py` (`fingerprint_command`, `fingerprint_tool_args`, `classify_command_kind`, `classify_tool_call_kind`, `extract_error_signature`, `classify_error_kind`, `extract_read_paths`, `normalize_repo_path`) and synthetic tests in `tests/test_classifiers.py`. Wired automatically into both DSH and Claude Code adapters.
+- **Tests**: `.venv/bin/pytest -v` — 58 passed.
+- **Assumptions / Notes**:
+  - Compound shell commands (`&&`, `;`, `||`) take the highest-priority kind (`test > build > lint > vcs > search > read > other`), while pipelines (`|`) classify by their primary stage (`pytest | tail -20` -> `test`).
+  - `tsc` (including `tsc --noEmit`) is classified as `build` so TypeScript compilation checks count toward post-edit verification alongside `error TS\d+` compile-class signatures.
+  - `extract_error_signature` returns `None` when `is_error=False` so successful file reads/searches containing error keywords do not produce false positives.
