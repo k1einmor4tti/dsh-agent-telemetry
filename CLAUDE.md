@@ -23,6 +23,10 @@ report. No DSH plugin, no live probe, no evaluation runner in P0.
 
 ## Hard rules
 
+- This repository is public on GitHub. Nothing committed may contain real
+  data: no real file paths, project or repository names, session ids, user
+  names, hostnames, prompts, or tool output from `~/.dsh` or `~/.claude`.
+  PROGRESS.md may only report aggregate numbers (counts, rates, percentiles).
 - Read-only access to real data: never modify, move, or delete anything under
   `~/.dsh` or `~/.claude`. Open files read-only.
 - Never commit real log content, real paths of other projects, or secrets.
