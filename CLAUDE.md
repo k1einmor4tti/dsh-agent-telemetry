@@ -3,7 +3,7 @@
 You are implementing P0 of the design "DSH Agent intelligence metrics plugin". P0 is an
 offline analyzer that turns DeepSeek Harness (DSH) session logs and Claude Code
 transcripts into one normalized trajectory format, computes agent metrics on
-both with the same code, stores them in DuckDB, and renders an HTML comparison
+both with the same code, stores them in SQLite, and renders an HTML comparison
 report. No DSH plugin, no live probe, no evaluation runner in P0.
 
 ## Collaboration protocol (mandatory)
@@ -37,7 +37,11 @@ report. No DSH plugin, no live probe, no evaluation runner in P0.
   anything reaches the store or the report.
 - No network except installing the declared dependencies. No `git push`.
 - Python 3.12 via `/opt/homebrew/bin/python3.12`; create `.venv` with it.
-  Dependencies: `duckdb`, `zstandard`, `pytest`. Nothing else without a
+  Deployment must stay simple and free: a local CLI, no service, no external
+  API calls, installable with one command
+  (`uv tool install git+https://github.com/k1einmor4tti/dsh-agent-telemetry`).
+  The only runtime dependency is `zstandard`; storage uses the standard
+  library `sqlite3`; `pytest` is a dev-only extra. Nothing else without a
   recorded reason in PROGRESS.md.
 - Package layout: `src/dsh_metrics/` (installable, `pyproject.toml`), tests in
   `tests/`, CLI entry point `dsh-metrics`.
@@ -108,8 +112,8 @@ report. No DSH plugin, no live probe, no evaluation runner in P0.
   D: truncation rate; compaction failure rate and ratio; post-compaction
   re-read rate; retry / timeout / context-overflow rates; abort rate.
   Every metric documents its formula in a docstring.
-- **M6 Store + CLI + report.** DuckDB at
-  `~/.local/share/dsh-metrics/metrics.duckdb` (override with `--db`).
+- **M6 Store + CLI + report.** SQLite (standard library `sqlite3`, WAL mode)
+  at `~/.local/share/dsh-metrics/metrics.sqlite` (override with `--db`).
   Tables: trajectories, model_calls, tool_calls, metrics (with
   metric_version), ingest_log. `dsh-metrics ingest --source dsh|claude-code
   [--since DATE]` is incremental and idempotent;
