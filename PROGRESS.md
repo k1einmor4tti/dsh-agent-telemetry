@@ -35,3 +35,13 @@
   - Compound shell commands (`&&`, `;`, `||`) take the highest-priority kind (`test > build > lint > vcs > search > read > other`), while pipelines (`|`) classify by their primary stage (`pytest | tail -20` -> `test`).
   - `tsc` (including `tsc --noEmit`) is classified as `build` so TypeScript compilation checks count toward post-edit verification alongside `error TS\d+` compile-class signatures.
   - `extract_error_signature` returns `None` when `is_error=False` so successful file reads/searches containing error keywords do not produce false positives.
+
+## M5 — Passive Metrics (`metric_version=1`) + Review Fixes (R7, R12, R13)
+
+- **Done**: Implemented `src/dsh_metrics/metrics.py` (`TrajectoryMetrics`, `AggregateMetrics`, `compute_trajectory_metrics`, `aggregate_trajectory_metrics`) covering Categories A, B, C, and D with formula docstrings on every metric, plus synthetic tests in `tests/test_metrics.py`. Resolved `[R7]` (excluding `reason == "prune"` from `compaction_failure_rate` and `compaction_ratio`, reporting `prune_compaction_count` separately), `[R12]` (classifying Make `lint`/`style`/`fmt`/`format`/`vet`/`staticcheck` targets as `lint` ahead of generic `check`), and `[R13]` (adding focused single-behaviour synthetic tests asserting 100% of fields on `TrajectoryMetrics` and `AggregateMetrics`, including DSH `error:CODE:message` turn-end reasons and parallel tool interval merging).
+- **Tests**: `.venv/bin/pytest -v` — 75 passed.
+- **Assumptions / Notes**:
+  - `cache_hit_ratio` uses `cache_read_tokens / (input_tokens + cache_read_tokens + cache_write_tokens)` across both harnesses (verified on local DSH logs that `inputTokens` represents uncached input tokens, matching Claude Code's accounting).
+  - Active turn timing merges overlapping model/tool intervals within each turn and excludes inter-turn user idle breaks from `gap_time_ms`.
+  - `verification_rate` and `read_to_edit_precision` evaluate over editing trajectories (`edit_count > 0`) and resolve to `None` on non-editing trajectories so read-only Q&A sessions do not skew edit metrics.
+  - Part 2 of `[R11]` (SQLite store `UNIQUE(source, response_id)` and `UNIQUE(source, call_id)`) remains under `Open` for M6.

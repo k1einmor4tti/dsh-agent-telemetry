@@ -78,7 +78,13 @@ def test_fingerprint_command_normalizes_numbers_whitespace_quotes_and_sed_ranges
         ("make test", "test"),
         ("make check", "test"),
         ("make lint", "lint"),
+        ("make check-lint", "lint"),
+        ("make check-go-style", "lint"),
         ("make fmt", "lint"),
+        ("make format", "lint"),
+        ("make check-format", "lint"),
+        ("make vet", "lint"),
+        ("make staticcheck", "lint"),
         # Read / Search / VCS / Other
         ("sed -n '10,40p' src/main.go", "read"),
         ("sed -i 's/foo/bar/g' src/main.go", "other"),

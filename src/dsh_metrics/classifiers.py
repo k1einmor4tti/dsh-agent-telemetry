@@ -363,27 +363,56 @@ def _classify_npm_script(script_name: str) -> CommandKind:
 
 def _classify_make_targets(args: list[str]) -> CommandKind:
     targets: list[str] = []
-    skip_next = False
-    for a in args:
-        if skip_next:
-            skip_next = False
+    idx = 0
+    n = len(args)
+    while idx < n:
+        a = args[idx]
+        if a in ("-C", "-f", "--directory", "--file"):
+            idx += 2
             continue
-        if a in ("-C", "-f", "-j", "--directory", "--file", "--jobs"):
-            skip_next = True
+        if a in ("-j", "--jobs"):
+            if idx + 1 < n and args[idx + 1].isdigit():
+                idx += 2
+            else:
+                idx += 1
             continue
         if a.startswith("-") or "=" in a:
+            idx += 1
             continue
         targets.append(a.lower())
+        idx += 1
 
     if not targets:
         return "build"
+
+    best: CommandKind = "other"
     for t in targets:
-        if any(k in t for k in ("test", "check", "pytest", "unittest", "spec")):
-            return "test"
-    for t in targets:
-        if any(k in t for k in ("lint", "fmt", "format", "vet", "style", "typecheck", "mypy", "ruff")):
-            return "lint"
-    return "build"
+        if any(
+            k in t
+            for k in (
+                "lint",
+                "style",
+                "fmt",
+                "format",
+                "vet",
+                "staticcheck",
+                "typecheck",
+                "mypy",
+                "ruff",
+                "eslint",
+                "prettier",
+                "flake8",
+                "clippy",
+            )
+        ):
+            cand: CommandKind = "lint"
+        elif any(k in t for k in ("test", "check", "pytest", "unittest", "spec")):
+            cand = "test"
+        else:
+            cand = "build"
+        if _KIND_PRIORITY[cand] > _KIND_PRIORITY[best]:
+            best = cand
+    return best
 
 
 def _classify_python_invocation(args: list[str]) -> CommandKind:

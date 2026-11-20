@@ -10,8 +10,6 @@ Reviewer findings. Fix every item under Open before the next milestone, then mov
 
   Add a test with two synthetic files sharing one response.
 
-- [R7] (for M5, verified on real data) The DSH adapter emits a `Compaction(reason="prune", ok=True)` for every model-free `compaction/prune` run outside a summary bracket: 257 of the 1483 compactions in the real corpus. If the M5 compaction failure rate and compression ratio count these, the real summary failure rate (468/1226 = 38%) is diluted to 32%. In M5, compute compaction failure rate and ratio over summary compactions only (exclude `reason == "prune"`), report prune runs as a separate count, and add a test with a mixed fixture.
-
 ## Resolved
 
 - [R1] Added `turn: int | None` to `ModelCall`, `ToolCall`, and `Edit`, plus `at: int | None` epoch-ms timestamps on `Edit`, `TurnEnd`, and `Outcome` (and `event_timestamp` helper) in `src/dsh_metrics/ir.py`.
@@ -20,6 +18,9 @@ Reviewer findings. Fix every item under Open before the next milestone, then mov
 - [R4] Replaced `ToolCall.output_text` with `error_signature: str | None` and `output_tail: str | None` (bounded to <= 2048 UTF-8 bytes and redacted at the adapter boundary), with unit tests in `tests/test_ir.py` and `tests/test_dsh_adapter.py`.
 - [R5] Re-read updated Hard Rules in `CLAUDE.md` and verified zero real paths, project names, session IDs, usernames, prompts, or tool output appear in any committed file; preserved history without reset/rebase.
 - [R6] Removed `duckdb` from `pyproject.toml` runtime dependencies (leaving `zstandard` only, `pytest` in `dev`) and uninstalled `duckdb` from `.venv`; M6 store will use standard-library `sqlite3` at `~/.local/share/dsh-metrics/metrics.sqlite`.
+- [R7] Computed `compaction_failure_rate` and `compaction_ratio` over summary compactions only (`reason != "prune"`), reported `prune_compaction_count` separately in `src/dsh_metrics/metrics.py`, and verified with a mixed fixture in `tests/test_metrics.py`.
 - [R8] Updated `parse_dsh_session` in `src/dsh_metrics/adapters/dsh.py` to merge companion `session.jsonl.zstd` and `session.v4.jsonl.zstd` logs by appending `v4` events strictly later than the legacy log's last event, with synthetic overlap test in `tests/test_dsh_adapter.py`.
 - [R9] Grouped Claude Code `assistant` entries by `message.id` (fallback `requestId`) into one `ModelCall` using final-entry usage and `[earliest, latest]` timestamps, verified by 3-entry synthetic test and aggregate corpus match (`7,413 == 7,413` per-file, `6,583 == 6,583` global).
 - [R10] Stopped real-corpus exploration, restricted `discover_claude_code_files` to top-level `~/.claude/projects/*/*.jsonl`, recorded the nested-subagent scope assumption in `PROGRESS.md`, and verified with a single aggregate sanity run.
+- [R12] Updated `_classify_make_targets` in `src/dsh_metrics/classifiers.py` so targets containing `lint`, `style`, `fmt`, `format`, `vet`, or `staticcheck` classify as `lint` ahead of generic `check`, with tests in `tests/test_classifiers.py`.
+- [R13] Added focused single-behaviour synthetic tests in `tests/test_metrics.py` (covering `escape_latency_steps_median`, `steps_to_green_median`/`steps_to_green_values`, `post_compaction_reread_count`/`post_compaction_read_count`, `aborted_turn_count`/`timeout_turn_count`/`context_overflow_turn_count` with `error:CODE:message`, truncation counts, retry counts, parallel tool interval merging, and 100% of `TrajectoryMetrics`/`AggregateMetrics` fields).
