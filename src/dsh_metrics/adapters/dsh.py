@@ -738,15 +738,17 @@ def parse_dsh_session(path: str | Path) -> Trajectory:
             msg = data.get("message") if isinstance(data.get("message"), Mapping) else {}
             src = msg.get("source") if isinstance(msg.get("source"), Mapping) else {}
             fallback_cid = (
-                src.get("callId") if isinstance(src.get("callId"), str) else None
+                src["callId"]
+                if isinstance(src.get("callId"), str) and src["callId"]
+                else None
             )
             blocks = msg.get("content") if isinstance(msg.get("content"), list) else []
             for blk in blocks:
                 if not isinstance(blk, Mapping):
                     continue
                 cid = (
-                    blk.get("toolCallId")
-                    if isinstance(blk.get("toolCallId"), str)
+                    blk["toolCallId"]
+                    if isinstance(blk.get("toolCallId"), str) and blk["toolCallId"]
                     else fallback_cid
                 )
                 full_text = _extract_result_text(blk.get("content"))

@@ -564,3 +564,107 @@ def test_claude_code_malformed_lines_unknown_types_and_redaction(
 
     te = [e for e in traj.events if isinstance(e, TurnEnd)][0]
     assert te.reason == "aborted"
+
+
+def test_claude_code_resumed_session_id_and_inter_turn_idle_boundary(
+    tmp_path: Path,
+) -> None:
+    """R14: resumed transcripts adopt latest sessionId, ignore tools-used, and close turns at turn_last_ts."""
+    entries = [
+        {
+            "type": "tools-used",
+            "sessionId": "cc-old-prefix",
+            "tools": ["Read"],
+            "timestamp": "2026-10-03T09:00:00.000Z",
+        },
+        {
+            "type": "user",
+            "sessionId": "cc-old-prefix",
+            "cwd": "/synth/repo",
+            "timestamp": "2026-10-03T09:00:01.000Z",
+            "message": {"role": "user", "content": "Turn 1"},
+        },
+        {
+            "type": "assistant",
+            "sessionId": "cc-old-prefix",
+            "timestamp": "2026-10-03T09:00:02.000Z",
+            "message": {
+                "id": "msg_t1",
+                "model": "claude-sonnet-5-5",
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": ""}],
+                "usage": {"input_tokens": 40, "output_tokens": 5},
+            },
+        },
+        {
+            "type": "assistant",
+            "sessionId": "cc-old-prefix",
+            "timestamp": "2026-10-03T09:00:04.000Z",
+            "message": {
+                "id": "msg_t1",
+                "model": "claude-sonnet-5-5",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tu_t1",
+                        "name": "Bash",
+                        "input": {"command": "pytest -q"},
+                    }
+                ],
+                "usage": {"input_tokens": 40, "output_tokens": 18},
+            },
+        },
+        {
+            "type": "user",
+            "sessionId": "cc-old-prefix",
+            "timestamp": "2026-10-03T09:00:05.000Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tu_t1",
+                        "is_error": False,
+                        "content": "1 passed",
+                    }
+                ],
+            },
+        },
+        # Resumed 30 minutes later with new sessionId: Turn 1 must close at 09:00:05Z, not 09:30:00Z
+        {
+            "type": "user",
+            "sessionId": "cc-resumed-final",
+            "timestamp": "2026-10-03T09:30:00.000Z",
+            "message": {"role": "user", "content": "Turn 2"},
+        },
+        {
+            "type": "assistant",
+            "sessionId": "cc-resumed-final",
+            "timestamp": "2026-10-03T09:30:02.000Z",
+            "message": {
+                "id": "msg_t2",
+                "model": "claude-sonnet-5-5",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Done"}],
+                "usage": {"input_tokens": 50, "output_tokens": 10},
+            },
+        },
+    ]
+    f = tmp_path / "slug" / "cc-resumed-final.jsonl"
+    _write_jsonl(f, [json.dumps(e) for e in entries])
+
+    trajs = parse_claude_code_file(f)
+    assert len(trajs) == 1
+    traj = trajs[0]
+    assert traj.session_id == "cc-resumed-final"
+
+    mcs = [e for e in traj.events if isinstance(e, ModelCall)]
+    tcs = [e for e in traj.events if isinstance(e, ToolCall)]
+    tes = [e for e in traj.events if isinstance(e, TurnEnd)]
+
+    assert mcs[0].first_token_at is None
+    assert tcs[0].available_tools is None
+    assert tes[0].turn == 1
+    assert tes[0].at == parse_iso_ms("2026-10-03T09:00:05.000Z")
+

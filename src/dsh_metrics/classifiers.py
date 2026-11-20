@@ -630,6 +630,8 @@ def extract_shell_command(tc: ToolCall) -> str | None:
                 cmd = parsed.get("command") or parsed.get("cmd")
                 if isinstance(cmd, str):
                     return cmd
+            elif tlower in SHELL_TOOL_NAMES:
+                return tc.raw_args
         except json.JSONDecodeError:
             if tlower in SHELL_TOOL_NAMES:
                 return tc.raw_args

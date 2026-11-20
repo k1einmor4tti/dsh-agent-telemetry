@@ -689,3 +689,62 @@ def test_discover_dsh_files_and_r8_legacy_v4_overlap(tmp_path: Path) -> None:
     assert tcs[0].call_id == "call_post_upgrade"
     assert tcs[0].available_tools == ("bash", "read")
     assert len(tes) == 2
+
+
+def test_dsh_empty_tool_call_id_falls_back_to_source_call_id(tmp_path: Path) -> None:
+    """R14: empty string toolCallId on tool-result block falls back to message.source.callId."""
+    events = [
+        {"type": "session", "id": "sess-empty-cid", "createdAt": 1000, "cwd": "/synth"},
+        {"type": "turn/start", "seq": 1, "time": 1100, "data": {"turn": 1}},
+        {"type": "step/start", "seq": 2, "time": 1200, "data": {"turn": 1, "step": 1}},
+        {
+            "type": "tool/call",
+            "seq": 3,
+            "time": 1300,
+            "data": {
+                "turn": 1,
+                "step": 1,
+                "callId": "call_fallback_01",
+                "name": "bash",
+                "arguments": '{"command":"pytest -q"}',
+            },
+        },
+        {
+            "type": "tool/result",
+            "seq": 4,
+            "time": 1750,
+            "data": {
+                "turn": 1,
+                "step": 1,
+                "message": {
+                    "source": {"callId": "call_fallback_01"},
+                    "content": [
+                        {
+                            "type": "tool-result",
+                            "toolCallId": "",
+                            "isError": False,
+                            "content": [{"type": "text", "text": "FAIL\n[exit code: 2]"}],
+                        }
+                    ],
+                },
+            },
+        },
+        {
+            "type": "turn/end",
+            "seq": 5,
+            "time": 1800,
+            "data": {"turn": 1, "reason": {"kind": "completed"}},
+        },
+    ]
+    log_path = tmp_path / "slug" / "session-empty-cid" / "session.jsonl.zstd"
+    _write_zstd_lines(log_path, [json.dumps(e) for e in events])
+
+    traj = parse_dsh_session(log_path)
+    tcs = [e for e in traj.events if isinstance(e, ToolCall)]
+    assert len(tcs) == 1
+    assert tcs[0].call_id == "call_fallback_01"
+    assert tcs[0].started_at == 1300
+    assert tcs[0].ended_at == 1750
+    assert tcs[0].exit_code == 2
+    assert tcs[0].is_error is True
+

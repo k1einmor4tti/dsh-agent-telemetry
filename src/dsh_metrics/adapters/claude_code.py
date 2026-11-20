@@ -370,11 +370,7 @@ class _ChainBuilder:
     def handle_entry(self, obj: Mapping[str, Any]) -> None:
         ts = parse_iso_ms(obj.get("timestamp"))
 
-        if (
-            self.session_id is None
-            and isinstance(obj.get("sessionId"), str)
-            and obj["sessionId"]
-        ):
+        if isinstance(obj.get("sessionId"), str) and obj["sessionId"]:
             self.session_id = obj["sessionId"]
         if (
             self.agent_id is None
@@ -387,11 +383,7 @@ class _ChainBuilder:
 
         ev_type = obj.get("type")
 
-        if ev_type == "tools-used" and isinstance(obj.get("tools"), list):
-            if self.available_tools is None:
-                self.available_tools = tuple(
-                    str(t) for t in obj["tools"] if isinstance(t, str)
-                )
+        if ev_type == "tools-used":
             return
 
         if ev_type == "system":
@@ -552,7 +544,8 @@ class _ChainBuilder:
                 self.trigger_ts = ts
             else:
                 if self.turn_open:
-                    self.close_open_turn("completed", ts)
+                    self.close_open_turn("completed", self.turn_last_ts)
+                self._record_ts(ts)
                 self.turn += 1
                 self.step = 0
                 self.turn_open = True
@@ -760,20 +753,11 @@ class _ChainBuilder:
         final_events: list[TrajectoryEvent] = []
         for slot in self.slots:
             if isinstance(slot, _PendingModelCall):
-                first_tok = (
-                    slot.started_at
-                    if (
-                        slot.started_at is not None
-                        and slot.ended_at is not None
-                        and slot.started_at < slot.ended_at
-                    )
-                    else None
-                )
                 final_events.append(
                     ModelCall(
                         step=slot.step,
                         started_at=slot.started_at,
-                        first_token_at=first_tok,
+                        first_token_at=None,
                         ended_at=slot.ended_at,
                         input_tokens=slot.input_tokens,
                         cache_read_tokens=slot.cache_read_tokens,
