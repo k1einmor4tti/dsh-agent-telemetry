@@ -45,3 +45,25 @@
   - Active turn timing merges overlapping model/tool intervals within each turn and excludes inter-turn user idle breaks from `gap_time_ms`.
   - `verification_rate` and `read_to_edit_precision` evaluate over editing trajectories (`edit_count > 0`) and resolve to `None` on non-editing trajectories so read-only Q&A sessions do not skew edit metrics.
   - Part 2 of `[R11]` (SQLite store `UNIQUE(source, response_id)` and `UNIQUE(source, call_id)`) remains under `Open` for M6.
+
+## M6 — SQLite Store + CLI + HTML Report + Review Fixes (R11, R14, R15)
+
+- **Done**: Committed the two pending adapter edge-case fixes with synthetic tests (`2de9b1b`), then implemented `src/dsh_metrics/store.py` (WAL-mode SQLite schema `trajectories`, `model_calls`, `tool_sets`, `tool_calls`, `metrics`, `ingest_log`), `src/dsh_metrics/cli.py` (`dsh-metrics ingest` and `dsh-metrics report`), `src/dsh_metrics/report.py` (self-contained HTML comparison report with light/dark theme tokens and the required observational caveat banner), and `tests/test_store_and_report.py`. Resolved `[R11]` Part 2 (`UNIQUE(source, response_id)` and `UNIQUE(source, call_id)` keeping first-seen trajectories), `[R14]`, and `[R15]` (`tool_sets(id, tools_json)` deduplication via `tool_calls.tool_set_id`, `trajectory_id` FKs, shell-only `raw_args` capped at 1,024 UTF-8 bytes, `{"path", "bytes"}` metadata for write/edit/read, and error/non-zero-exit-only `output_tail`).
+- **Tests**: `.venv/bin/pytest -v` — 84 passed.
+- **SQLite Store Size (Before / After R15)**:
+  - **Before**: `227.07 MB` (`216.55 MiB`, `227,069,952` bytes).
+  - **After**: `27.66 MB` (`26.38 MiB`, `27,656,192` bytes; `-87.8%`, well under the 30 MB target; `12` distinct `tool_sets` rows, `max(length(raw_args)) = 1,024` bytes, `0` non-error `output_tail` rows).
+- **Real-Data Aggregate Headlines (`metric_version=1`, passive data — tasks differ, not a fair comparison)**:
+  - **DSH** (`175` trajectories, `1,501` turns, `0` parse failures):
+    - *Cat A*: `44,593` model calls (`29.71`/turn; p50 `24.25`, p90 `77.08`), `46,826` tool calls (`31.20`/turn; p50 `34.10`, p90 `97.23`), near-duplicate shell command rate `10.6%` (`3,526 / 33,127`), `47` repeated-failure groups (`112` calls; escape latency mean `243.94` steps, median `9.0`, p90 `479.2`), unknown-tool rate `0.24%` (`111`), arg-validation error rate `0.12%` (`54`).
+    - *Cat B*: `4,559` edits across `52` editing sessions, compile-class errors `1.49` / 100 edits (`68`), test fail->green (`<= 10` steps) `89.3%` (`75 / 84`; steps-to-green mean `2.17`, median `2.0`, p90 `4.0`), post-edit verification rate `65.4%` (`34 / 52`), read->edit precision proxy `14.7%` (`1,050 / 7,143`).
+    - *Cat C*: `9.15B` total tokens (`3.82B` uncached input, `5.30B` cache read, `25.63M` output), cache hit ratio `58.1%`, model latency p50 `7.08 s` / p90 `20.53 s`, TTFT p50 `4.31 s` / p90 `13.54 s`, active turn time split `9.4%` model / `89.9%` tool / `0.7%` gap.
+    - *Cat D*: truncation rate `0.05%` (`25 / 46,773`), summary compaction failure rate `38.2%` (`468 / 1,226`; `257` separate prune runs), summary compaction token ratio `0.501`, post-compaction re-read rate `51.7%` (`6,097 / 11,795`), LLM retry rate `0.97%` (`431` calls, `827` retries), timeout turn rate `1.07%` (`16`), context-overflow turn rate `0.87%` (`13`), abort rate `8.66%` (`130`).
+  - **Claude Code** (`129` deduplicated trajectories from `131` top-level files, `554` turns, `0` parse failures; `830` duplicate responses and `968` duplicate tool calls ignored via SQLite `UNIQUE` constraints):
+    - *Cat A*: `7,074` model calls (`12.77`/turn; p50 `6.50`, p90 `39.28`), `8,208` tool calls (`14.82`/turn; p50 `6.75`, p90 `52.63`), near-duplicate shell command rate `5.2%` (`212 / 4,039`), `5` repeated-failure groups (`10` calls; escape latency mean `36.20` steps, median `3.0`, p90 `102.4`), unknown-tool rate `N/A` (`0` schema-checked calls), arg-validation error rate `0.00%` (`0`).
+    - *Cat B*: `500` edits across `28` editing sessions, compile-class errors `1.40` / 100 edits (`7`), test fail->green (`<= 10` steps) `71.4%` (`10 / 14`; steps-to-green mean `3.40`, median `3.0`, p90 `7.0`), post-edit verification rate `39.3%` (`11 / 28`), read->edit precision proxy `5.4%` (`73 / 1,350`).
+    - *Cat C*: `1.67B` total tokens (`6.92M` uncached input, `1.64B` cache read, `18.19M` cache write, `5.90M` output including `2.76M` reasoning), cache hit ratio `98.5%`, model latency p50 `739 ms` / p90 `3.84 s`, TTFT `N/A`, active turn time split `5.6%` model / `30.1%` tool / `64.3%` gap.
+    - *Cat D*: truncation rate `0.95%` (`78 / 8,192`), summary compaction failure rate `0.0%` (`0 / 14`), summary compaction token ratio `0.074`, post-compaction re-read rate `20.0%` (`42 / 210`), LLM retry rate `0.28%` (`20` calls, `120` retries), timeout turn rate `0.54%` (`3`), context-overflow turn rate `0.72%` (`4`), abort rate `6.50%` (`36`).
+
+DONE
+

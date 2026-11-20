@@ -29,17 +29,22 @@ from dsh_metrics.metrics import (
     aggregate_trajectory_metrics,
     compute_trajectory_metrics,
 )
+from dsh_metrics.report import render_comparison_html, write_comparison_report
+from dsh_metrics.store import DEFAULT_DB_PATH, IngestResult, MetricsStore
 
 __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
+    "DEFAULT_DB_PATH",
     "METRIC_VERSION",
     "AggregateMetrics",
     "CommandKind",
     "Compaction",
     "Edit",
     "ErrorKind",
+    "IngestResult",
+    "MetricsStore",
     "ModelCall",
     "Outcome",
     "ToolCall",
@@ -57,4 +62,6 @@ __all__ = [
     "extract_read_paths",
     "fingerprint_command",
     "fingerprint_tool_args",
+    "render_comparison_html",
+    "write_comparison_report",
 ]

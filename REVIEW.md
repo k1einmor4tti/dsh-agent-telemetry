@@ -4,14 +4,13 @@ Reviewer findings. Fix every item under Open before the next milestone, then mov
 
 ## Open
 
-- [R11] (for M3 IR + M6 store, verified on the real corpus) The R9 fix is correct within a file: 7,290 ModelCalls equals the 7,291 per-file distinct `message.id`s. But resumed and forked Claude Code sessions copy earlier history into a new transcript file. 303 response ids appear in more than one file, and globally there are only 6,461 distinct responses, so cross-file counting still inflates calls and tokens by about 13%. Fix in two parts:
-  1. Add `response_id: str | None` to `ModelCall` (Claude Code `message.id`; for DSH, None or a stable `session:turn:step`). Also ensure `ToolCall.call_id` is the `tool_use` id.
-  2. In the M6 SQLite store, make `(source, response_id)` and `(source, call_id)` unique, so duplicates are ignored on ingest and the first-seen trajectory keeps them.
-
-  Add a test with two synthetic files sharing one response.
+(none)
 
 ## Resolved
 
+- [R11] Added `ModelCall.response_id` and `ToolCall.call_id` (M3) and enforced `UNIQUE(source, response_id)` and `UNIQUE(source, call_id)` in `src/dsh_metrics/store.py` so first-seen trajectories retain shared responses/calls and cross-file duplicates are ignored, verified by synthetic two-file tests in `tests/test_claude_code_adapter.py` and `tests/test_store_and_report.py`.
+- [R14] Committed the pending DSH/Claude Code adapter tweaks with synthetic tests (`2de9b1b`), then implemented `store.py`, `cli.py`, `report.py`, and `tests/test_store_and_report.py`, followed by a single real ingest + report run recorded in `PROGRESS.md`.
+- [R15] Normalized distinct tool lists into `tool_sets(id, tools_json)` (`tool_calls.tool_set_id`), normalized `trajectory_id` FKs, capped shell `raw_args` at 1 KB (path + byte length only for write/edit/read, `NULL` otherwise), and kept `output_tail` only on error/non-zero exit calls, shrinking `metrics.sqlite` from 227.07 MB to 27.66 MB (26.38 MiB) with cap assertions in `tests/test_store_and_report.py`.
 - [R1] Added `turn: int | None` to `ModelCall`, `ToolCall`, and `Edit`, plus `at: int | None` epoch-ms timestamps on `Edit`, `TurnEnd`, and `Outcome` (and `event_timestamp` helper) in `src/dsh_metrics/ir.py`.
 - [R2] Added `parse_failures: int = 0` and `unknown_event_types: tuple[str, ...] = ()` to `Trajectory` in `src/dsh_metrics/ir.py`.
 - [R3] Enforced secret redaction at the adapter boundary before constructing IR objects in both `dsh.py` and `claude_code.py`, verified by synthetic redaction tests in `tests/test_dsh_adapter.py` and `tests/test_claude_code_adapter.py`.
