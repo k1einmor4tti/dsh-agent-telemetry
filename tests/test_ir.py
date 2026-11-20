@@ -47,6 +47,7 @@ def test_dataclass_fields_include_spec_and_review_extensions() -> None:
         "provider",
         "model",
         "turn",
+        "response_id",
     ]
     assert [f.name for f in fields(ToolCall)] == [
         "step",

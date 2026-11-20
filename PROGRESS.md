@@ -18,3 +18,11 @@
   - Non-zero bash `[exit code: N]` sets `exit_code = N` and `is_error = True` so failing shell commands match normalized `ToolCall` semantics across harnesses; failed `edit`/`write` calls (`isError = true`) do not emit `Edit` events.
   - `llm/retry` is counted once per retry attempt (`llm/retry-started` is not double-counted).
   - `[R3]` stays under `Open` until M3 Claude Code adapter and its redaction fixture test are also completed.
+
+## M3 — Claude Code Adapter + Review Fixes (R3, R8, R9, R10, R11-part-1)
+
+- **Done**: Implemented streaming read-only Claude Code `.jsonl` adapter (`src/dsh_metrics/adapters/claude_code.py`) and synthetic tests (`tests/test_claude_code_adapter.py`). Resolved `[R3]` (redaction boundary enforced across both adapters before IR construction), `[R8]` (appending post-upgrade `session.v4.jsonl.zstd` events later than `session.jsonl.zstd`'s last event), `[R9]` (grouping streamed assistant entries by `message.id` / `requestId`, taking final entry usage and `[earliest, latest]` timestamps), `[R10]` (discovering top-level `~/.claude/projects/*/*.jsonl` only), and Part 1 of `[R11]` (`ModelCall.response_id`, `ToolCall.call_id`, first-seen corpus deduplication, and two-file shared-response test).
+- **Tests**: `.venv/bin/pytest -v` — 11 passed. Single read-only aggregate sanity check on local Claude Code transcripts parsed 129 top-level files into 128 deduplicated trajectories with 0 parse failures: per-file `ModelCall` count matches distinct per-file `message.id`/`requestId` count exactly (`7,413 == 7,413`), and corpus-deduplicated `ModelCall` count matches global distinct `message.id`/`requestId` count exactly (`6,583 == 6,583`; 5,526,580 output tokens, 7,728 tool calls, 445 edits, 14 compactions, 514 turn ends).
+- **Assumptions / Notes**:
+  - Subagent transcripts in nested session subdirectories under `~/.claude/projects/<slug>/<session>/` are out of scope for P0 per `[R10]`; inline `isSidechain: true` entries within top-level `.jsonl` files are emitted as separate sidechain trajectories.
+  - `[R7]` (M5 compaction metrics excluding `reason == "prune"`) and Part 2 of `[R11]` (M6 SQLite store `UNIQUE(source, response_id)` and `UNIQUE(source, call_id)`) remain under `Open` until M5 and M6 are implemented.

@@ -534,15 +534,134 @@ def test_dsh_secret_redaction_boundary(tmp_path: Path) -> None:
     assert redact_secrets(normal_path) == normal_path
 
 
-def test_discover_dsh_files_prefers_latest_over_v4(tmp_path: Path) -> None:
+def test_discover_dsh_files_and_r8_legacy_v4_overlap(tmp_path: Path) -> None:
     both_dir = tmp_path / "slug1" / "session-a"
+    legacy_events = [
+        {
+            "type": "session",
+            "id": "sess-overlap",
+            "createdAt": 1000,
+            "cwd": "/workspace/overlap",
+        },
+        {
+            "type": "request/header",
+            "seq": 1,
+            "time": 1010,
+            "data": {
+                "header": {
+                    "config": {"provider": "deepseek", "model": "deepseek-chat"},
+                    "tools": [{"name": "bash"}, {"name": "read"}],
+                }
+            },
+        },
+        {"type": "turn/start", "seq": 2, "time": 1020, "data": {"turn": 1}},
+        {"type": "step/start", "seq": 3, "time": 1030, "data": {"turn": 1, "step": 1}},
+        {
+            "type": "assistant/message",
+            "seq": 4,
+            "time": 1100,
+            "data": {
+                "turn": 1,
+                "step": 1,
+                "message": {"role": "assistant", "content": []},
+                "usage": {"inputTokens": 100, "outputTokens": 20},
+            },
+        },
+        {
+            "type": "turn/end",
+            "seq": 5,
+            "time": 1150,
+            "data": {"turn": 1, "reason": {"kind": "completed"}},
+        },
+    ]
+    v4_events = [
+        {
+            "type": "session",
+            "version": 4,
+            "id": "sess-overlap",
+            "createdAt": 1000,
+            "cwd": "/workspace/overlap",
+        },
+        # Overlapping Turn 1 events (time <= 1150) must NOT be duplicated
+        {"type": "turn/start", "seq": 2, "time": 1020, "data": {"turn": 1}},
+        {"type": "step/start", "seq": 3, "time": 1030, "data": {"turn": 1, "step": 1}},
+        {
+            "type": "assistant/message",
+            "seq": 4,
+            "time": 1100,
+            "data": {
+                "turn": 1,
+                "step": 1,
+                "message": {"role": "assistant", "content": []},
+                "usage": {"inputTokens": 100, "outputTokens": 20},
+            },
+        },
+        {
+            "type": "turn/end",
+            "seq": 5,
+            "time": 1150,
+            "data": {"turn": 1, "reason": {"kind": "completed"}},
+        },
+        # Post-upgrade Turn 2 events strictly later than legacy's last event (1150)
+        {"type": "turn/start", "seq": 6, "time": 2000, "data": {"turn": 2}},
+        {"type": "step/start", "seq": 7, "time": 2010, "data": {"turn": 2, "step": 1}},
+        {
+            "type": "assistant/message",
+            "seq": 8,
+            "time": 2100,
+            "data": {
+                "turn": 2,
+                "step": 1,
+                "message": {"role": "assistant", "content": []},
+                "usage": {"inputTokens": 200, "outputTokens": 30},
+            },
+        },
+        {
+            "type": "tool/call",
+            "seq": 9,
+            "time": 2110,
+            "data": {
+                "turn": 2,
+                "step": 1,
+                "callId": "call_post_upgrade",
+                "name": "bash",
+                "arguments": '{"command":"echo ok"}',
+            },
+        },
+        {
+            "type": "tool/result",
+            "seq": 10,
+            "time": 2150,
+            "data": {
+                "turn": 2,
+                "step": 1,
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool-result",
+                            "toolCallId": "call_post_upgrade",
+                            "isError": False,
+                            "content": [{"type": "text", "text": "ok"}],
+                        }
+                    ]
+                },
+            },
+        },
+        {
+            "type": "turn/end",
+            "seq": 11,
+            "time": 2200,
+            "data": {"turn": 2, "reason": {"kind": "completed"}},
+        },
+    ]
+
     _write_zstd_lines(
         both_dir / "session.jsonl.zstd",
-        [json.dumps({"type": "session", "id": "a", "createdAt": 1000})],
+        [json.dumps(e) for e in legacy_events],
     )
     _write_zstd_lines(
         both_dir / "session.v4.jsonl.zstd",
-        [json.dumps({"type": "session", "id": "a", "createdAt": 1000})],
+        [json.dumps(e) for e in v4_events],
     )
 
     v4_only_dir = tmp_path / "slug1" / "session-b"
@@ -556,3 +675,17 @@ def test_discover_dsh_files_prefers_latest_over_v4(tmp_path: Path) -> None:
         both_dir / "session.jsonl.zstd",
         v4_only_dir / "session.v4.jsonl.zstd",
     ]
+
+    traj = parse_dsh_session(both_dir / "session.jsonl.zstd")
+    mcs = [e for e in traj.events if isinstance(e, ModelCall)]
+    tcs = [e for e in traj.events if isinstance(e, ToolCall)]
+    tes = [e for e in traj.events if isinstance(e, TurnEnd)]
+
+    assert len(mcs) == 2
+    assert [m.response_id for m in mcs] == ["sess-overlap:1:1", "sess-overlap:2:1"]
+    assert sum(m.input_tokens or 0 for m in mcs) == 300
+    assert sum(m.output_tokens or 0 for m in mcs) == 50
+    assert len(tcs) == 1
+    assert tcs[0].call_id == "call_post_upgrade"
+    assert tcs[0].available_tools == ("bash", "read")
+    assert len(tes) == 2

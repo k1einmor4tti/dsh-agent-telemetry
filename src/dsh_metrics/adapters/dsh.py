@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import io
 import json
@@ -96,6 +96,7 @@ _TRUNCATED_RE = re.compile(
     r"|^\[output truncated;\s*full output:"
     r"|\((?:Showing\s+\d+\s+of\s+\d+[^)]*\.\s*)?Full\s+(?:grep|sorted|formatted)?\s*result\s+stored\s+at:"
     r"|<persisted-output>"
+    r"|Output\s+too\s+large\s*\([^)]+\)\.\s*Full\s+output\s+saved\s+to:"
     r")",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -361,9 +362,95 @@ def _fallback_session_id(path: Path) -> str:
     return path.stem
 
 
+def _resolve_dsh_log_pair(file_path: Path) -> tuple[Path, Path | None]:
+    """Return (primary_path, post_upgrade_v4_path) when a session dir has both legacy and v4 logs."""
+    if file_path.is_dir():
+        legacy = file_path / "session.jsonl.zstd"
+        v4 = file_path / "session.v4.jsonl.zstd"
+        if legacy.is_file() and v4.is_file():
+            return legacy, v4
+        if legacy.is_file():
+            return legacy, None
+        if v4.is_file():
+            return v4, None
+    if file_path.name in ("session.jsonl.zstd", "session.v4.jsonl.zstd"):
+        legacy = file_path.parent / "session.jsonl.zstd"
+        v4 = file_path.parent / "session.v4.jsonl.zstd"
+        if legacy.is_file() and v4.is_file():
+            return legacy, v4
+    return file_path, None
+
+
+def _iter_parsed_dsh_records(
+    primary_path: Path, post_upgrade_v4: Path | None
+) -> Iterator[tuple[Mapping[str, Any] | None, str | None, int | None, bool]]:
+    """Stream records from primary log, appending post-upgrade v4 events strictly after legacy's last event."""
+    last_legacy_time: int | None = None
+
+    for raw_line, stream_err in _stream_lines(primary_path):
+        if stream_err:
+            yield None, None, None, True
+            break
+        assert raw_line is not None
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            yield None, None, None, True
+            continue
+        if not isinstance(obj, Mapping):
+            yield None, None, None, True
+            continue
+        ev_type = obj.get("type")
+        if not isinstance(ev_type, str) or not ev_type:
+            yield None, None, None, True
+            continue
+        ev_time = _pos_int(obj.get("time")) or _pos_int(obj.get("time0"))
+        if ev_time is not None and (
+            last_legacy_time is None or ev_time > last_legacy_time
+        ):
+            last_legacy_time = ev_time
+        yield obj, ev_type, ev_time, False
+
+    if post_upgrade_v4 is None:
+        return
+
+    for raw_line, stream_err in _stream_lines(post_upgrade_v4):
+        if stream_err:
+            yield None, None, None, True
+            break
+        assert raw_line is not None
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            yield None, None, None, True
+            continue
+        if not isinstance(obj, Mapping):
+            yield None, None, None, True
+            continue
+        ev_type = obj.get("type")
+        if not isinstance(ev_type, str) or not ev_type:
+            yield None, None, None, True
+            continue
+        ev_time = _pos_int(obj.get("time")) or _pos_int(obj.get("time0"))
+        if ev_type == "session":
+            yield obj, ev_type, ev_time, False
+            continue
+        if last_legacy_time is None or (
+            ev_time is not None and ev_time > last_legacy_time
+        ):
+            yield obj, ev_type, ev_time, False
+
+
 def parse_dsh_session(path: str | Path) -> Trajectory:
     """Stream-parse a DSH session (.jsonl.zstd or .jsonl) into a Trajectory."""
     file_path = Path(path).expanduser()
+    primary_path, post_upgrade_v4 = _resolve_dsh_log_pair(file_path)
     session_id: str | None = None
     started_at: int | None = None
     cwd: str | None = None
@@ -426,45 +513,30 @@ def parse_dsh_session(path: str | Path) -> Trajectory:
             awaiting_tokens_after.append(active_prune)
             active_prune = None
 
-    for raw_line, stream_err in _stream_lines(file_path):
-        if stream_err:
-            parse_failures += 1
-            break
-        assert raw_line is not None
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-        try:
-            obj = json.loads(stripped)
-        except json.JSONDecodeError:
+    for obj, ev_type, ev_time, is_failure in _iter_parsed_dsh_records(
+        primary_path, post_upgrade_v4
+    ):
+        if is_failure:
             parse_failures += 1
             continue
-        if not isinstance(obj, Mapping):
-            parse_failures += 1
-            continue
-
-        ev_type = obj.get("type")
-        if not isinstance(ev_type, str) or not ev_type:
-            parse_failures += 1
-            continue
+        assert obj is not None and ev_type is not None
 
         if ev_type not in KNOWN_DSH_EVENT_TYPES and ev_type not in unknown_seen:
             unknown_seen.add(ev_type)
             unknown_types.append(ev_type)
 
-        ev_time = _pos_int(obj.get("time")) or _pos_int(obj.get("time0"))
         if ev_time is not None and (earliest_time is None or ev_time < earliest_time):
             earliest_time = ev_time
 
         if ev_type == "session":
             raw_id = obj.get("id")
-            if isinstance(raw_id, str) and raw_id:
+            if session_id is None and isinstance(raw_id, str) and raw_id:
                 session_id = raw_id
             created = _pos_int(obj.get("createdAt"))
-            if created is not None:
+            if started_at is None and created is not None:
                 started_at = created
             raw_cwd = obj.get("cwd")
-            if isinstance(raw_cwd, str) and raw_cwd:
+            if cwd is None and isinstance(raw_cwd, str) and raw_cwd:
                 cwd = redact_secrets(raw_cwd)
             continue
 
@@ -838,6 +910,9 @@ def parse_dsh_session(path: str | Path) -> Trajectory:
             )
             st.emitted = True
 
+    resolved_sid = session_id or _fallback_session_id(primary_path)
+    seen_resp_counts: dict[str, int] = {}
+
     # Materialize frozen IR events
     final_events: list[TrajectoryEvent] = []
     for slot in slots:
@@ -889,12 +964,24 @@ def parse_dsh_session(path: str | Path) -> Trajectory:
                     reason=slot.reason,
                 )
             )
+        elif isinstance(slot, ModelCall):
+            resp_id = slot.response_id
+            if (
+                resp_id is None
+                and slot.turn is not None
+                and slot.step is not None
+            ):
+                base_resp = f"{resolved_sid}:{slot.turn}:{slot.step}"
+                cnt = seen_resp_counts.get(base_resp, 0) + 1
+                seen_resp_counts[base_resp] = cnt
+                resp_id = base_resp if cnt == 1 else f"{base_resp}#{cnt}"
+            final_events.append(replace(slot, response_id=resp_id))
         else:
             final_events.append(slot)
 
     return Trajectory(
         source="dsh",
-        session_id=session_id or _fallback_session_id(file_path),
+        session_id=resolved_sid,
         cwd=cwd,
         model_routes=tuple(routes),
         started_at=started_at if started_at is not None else earliest_time,

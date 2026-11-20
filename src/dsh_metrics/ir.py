@@ -38,6 +38,7 @@ class ModelCall:
     provider: str | None = None
     model: str | None = None
     turn: int | None = None
+    response_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_optional_int("step", self.step)
@@ -51,6 +52,10 @@ class ModelCall:
         _validate_optional_int("output_tokens", self.output_tokens)
         _validate_optional_int("reasoning_tokens", self.reasoning_tokens)
         _validate_optional_int("retries", self.retries)
+        if self.response_id is not None and not isinstance(self.response_id, str):
+            raise TypeError(
+                f"response_id must be str or None, got {type(self.response_id)!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
