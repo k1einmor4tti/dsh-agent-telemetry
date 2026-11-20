@@ -68,7 +68,8 @@ class ToolCall:
     truncated: bool | None = None
     available_tools: tuple[str, ...] | None = None
     turn: int | None = None
-    output_text: str | None = None
+    error_signature: str | None = None
+    output_tail: str | None = None
 
     def __post_init__(self) -> None:
         _validate_optional_int("step", self.step)
@@ -77,6 +78,8 @@ class ToolCall:
         _validate_epoch_ms("ended_at", self.ended_at)
         _validate_optional_int("exit_code", self.exit_code)
         _validate_optional_int("output_bytes", self.output_bytes)
+        if self.output_tail is not None and len(self.output_tail.encode("utf-8")) > 2048:
+            raise ValueError("output_tail must be at most 2048 UTF-8 bytes")
         if self.raw_args is not None and not isinstance(self.raw_args, str):
             if isinstance(self.raw_args, (Mapping, list, tuple)):
                 serialized = json.dumps(

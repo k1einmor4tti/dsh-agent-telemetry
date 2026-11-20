@@ -62,7 +62,8 @@ def test_dataclass_fields_include_spec_and_review_extensions() -> None:
         "truncated",
         "available_tools",
         "turn",
-        "output_text",
+        "error_signature",
+        "output_tail",
     ]
     assert [f.name for f in fields(Edit)] == [
         "step",
@@ -199,6 +200,8 @@ def test_unknown_values_default_to_none_and_zero_timestamps_rejected() -> None:
         Trajectory(source="dsh", session_id="s1", started_at=True)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="parse_failures"):
         Trajectory(source="dsh", session_id="s1", parse_failures=-1)
+    with pytest.raises(ValueError, match="2048 UTF-8 bytes"):
+        ToolCall(step=1, call_id="c1", name="bash", output_tail="a" * 2049)
 
 
 def test_cli_entrypoint() -> None:
