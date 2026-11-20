@@ -1,0 +1,7 @@
+.venv/
+.agent/
+__pycache__/
+*.egg-info/
+*.duckdb
+report*.html
+.pytest_cache/
